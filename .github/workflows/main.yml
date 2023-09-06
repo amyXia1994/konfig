@@ -167,3 +167,56 @@ jobs:
           path: |
             hack/report/test.xml
             hack/report/test.html
+
+  doc-sync:
+    runs-on: ubuntu-latest
+    container:
+      image: kusionstack/kcl-go:latest
+    steps:
+      - uses: actions/checkout@v4
+        with: 
+          fetch-depth: 0
+      - id: doc generate
+        shell: bash
+        run: |
+          NAMESPACE="KusionStack"
+          REPOSITORY="kusionstack.io"
+          FOLDER="$REPOSITORY"
+          SHORT_SHA=$(git rev-parse --short "$GITHUB_SHA")
+          BRANCH_NAME="doc-sync-${SHORT_SHA}"
+
+          # generate the model docs
+          kcl-go doc generate --format md --file-path ./
+          
+          # Clone the remote repository and change working directory to the
+          # folder it was cloned to.
+          git clone \
+            --depth=1 \
+            --branch=main \
+            https://kusion-docs:${{ secrets.kusion-docs-pat }}@github.com/$NAMESPACE/$REPOSITORY \
+            $FOLDER
+          cd $FOLDER
+
+          # clean the old content
+          rm -rf ./docs/reference/model/documentation/
+          mkdir ./docs/reference/model/documentation/
+          # copy the generated docs to doc repo
+          cp -rf ../docs/base/pkg/ ./docs/reference/model/documentation/
+          mv ./docs/reference/model/documentation/pkg.md ./docs/reference/model/documentation/documentation.md
+
+          # Setup the committers identity.
+          git config user.email "kusiondocs@gmail.com"
+          git config user.name "kusion-docs"
+
+          # Create a new feature branch for the changes.
+          git checkout -b $BRANCH_NAME
+
+          # Commit the changes and push the feature branch to origin
+          git add .
+          git commit -m "model: update and sync model docs"
+          echo "push the branch to remote repo: ${NAMESPACE}/${REPOSITORY}"
+          git push https://github.com/${NAMESPACE}/${REPOSITORY}.git  $BRANCH_NAME
+          
+          echo "create the PR"
+          # todo gh
+          
