@@ -6,6 +6,12 @@ import base.pkg.kusion_models.kube.metadata
 import base.pkg.kusion_models.kube.utils
 import base.pkg.kusion_models.kube.resource
 import base.pkg.kusion_prometheus.mixins as pmixins
+import base.pkg.kusion_clouds.alicloud
+import base.pkg.kusion_clouds.alicloud_backend
+import base.pkg.kusion_clouds.alicloud_backend.alicloud_config
+import base.pkg.kusion_clouds.aws
+import base.pkg.kusion_clouds.aws_backend
+import base.pkg.kusion_clouds.aws_backend.aws_config
 
 # Frontend volume to kubernetes volume mapping.
 VOLUME_SOURCE_TYPE_MAPPING = {
@@ -38,13 +44,14 @@ schema ServerBackend[inputConfig: server.Server]:
     # Store the input config parameter, ensure it can be seen in protocol and mixin.
     config: server.Server = inputConfig
     # Workload name.
-    workloadName: str = "{}{}".format(metadata.__META_APP_NAME, metadata.__META_ENV_TYPE_NAME).lower()
+    workloadName: str = config.name or "{}{}".format(metadata.__META_APP_NAME, metadata.__META_ENV_TYPE_NAME).lower()
     # App variable contains labels, selector and environments.
     app: utils.ApplicationBuilder = utils.ApplicationBuilder {}
     # Main containers and sidecar contrainers.
     mainContainer: {str:}
     sidecarContainers?: [{str:}]
     initContainers?: [{str:}]
+    provider?: [any]
 
     if config.mainContainer:
         assert config.image, "config.image must be specified and can't be empty or None or Undefined"
@@ -64,6 +71,15 @@ schema ServerBackend[inputConfig: server.Server]:
     if config.initContainers:
         initContainers = utils.VolumePatch(config.volumes, [utils.ContainerFrontend2Kube(_s) for _s in config.initContainers])
 
+    if config.storage:
+        provider = [*provider, *StorageBackend(config).provider]
+    
+    if config.database: 
+        provider = [*provider, *DatabaseBackend(config).provider]
+
+    _applicationLabel: {str: str} = {
+        "app.kubernetes.io/component": workloadName
+    }
     # Construct workload attributes.
     workloadAttributes: {str:} = {
         metadata = utils.MetadataBuilder(config) | {
@@ -72,14 +88,14 @@ schema ServerBackend[inputConfig: server.Server]:
         spec = {
             replicas = config.replicas
             if config.useBuiltInSelector: 
-                selector.matchLabels: app.selector | config.selector
+                selector.matchLabels: app.selector | config.selector | _applicationLabel
             else:
                 selector.matchLabels: config.selector
             template = {
                 metadata = {
                     if config.useBuiltInLabels:
-                        labels = app.labels
-                    **config.podMetadata                
+                        labels = app.labels | _applicationLabel
+                    **config.podMetadata
                 }
                 spec = {
                     containers = [mainContainer] + (sidecarContainers or [])
@@ -105,6 +121,8 @@ schema ServerBackend[inputConfig: server.Server]:
             }
         }
     }
+
+    _workloadInstance?: appsv1.Deployment | appsv1.StatefulSet
 
     # Generate workload instance.
     if config.workloadType == "Deployment":

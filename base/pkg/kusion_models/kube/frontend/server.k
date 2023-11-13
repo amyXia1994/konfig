@@ -8,14 +8,22 @@ import base.pkg.kusion_models.kube.frontend.container
 import base.pkg.kusion_models.kube.frontend.volume
 import base.pkg.kusion_models.kube.frontend.sidecar as s
 import base.pkg.kusion_models.kube.frontend.strategy
+import base.pkg.kusion_models.kube.frontend.storage
 
 schema Server:
     """Server is abstaction of Deployment and StatefulSet.
 
     Attributes
     ----------
+    name: str, default is Undefined, optional.
+        The name of the workload and service. 
+        If not defined, a generated name ("{__META_APP_NAME}-{__META_ENV_TYPE_NAME}") will be used.
+        The value of __META_APP_NAME will be extracted from the value of the "name" defined in project.yaml,
+        and the value of __META_ENV_TYPE_NAME will be extracted from the value of the "name" defined in stack.yaml.
     workloadType: "Deployment" | "StatefulSet", default is "Deployment", required.
         Application workload type, default to 'Deployment'
+    renderType: "Server" | "KubeVelaApplication", default is "Server", optional. 
+        Application render type, default to 'Server'
     replicas: int, default is 1, required.
         Number of desired pods. This is a pointer to distinguish between explicit zero and not specified. Defaults to 1.
     image: str, default is Undefined, required.
@@ -86,10 +94,15 @@ schema Server:
         schedulingStrategy.resource = res_tpl.tiny
     }
     """
-    __settings__: {str:str} = {"output_type" = "IGNORE"}
+
+    # workload name
+    name?: str
 
     # Application workload type, default to 'Deployment'
     workloadType: "Deployment" | "StatefulSet" = "Deployment"
+
+    # Application render type, default to 'Server'
+    renderType?: "Server" | "KubeVelaApplication" = "Server"
 
     # Application replicas
     replicas: int = option("replicas") or 1
@@ -124,3 +137,7 @@ schema Server:
     services?: [service.Service]
     ingresses?: [ingress.Ingress]
     serviceAccount?: sa.ServiceAccount
+
+    # app cloud resource
+    storage?: storage.ObjectStorage 
+    database?: storage.DataBase
